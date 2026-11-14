@@ -67,6 +67,7 @@
     <button data-t="swaps">Skill Exchange</button>
     <button data-t="plans">Monthly plans</button>
     <button data-t="contracts">Contracts</button>
+    <button data-t="donate">Support / Donate</button>
   </nav>
   <main id="view"></main>
 </div>
@@ -75,7 +76,7 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.14.1/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, onAuthStateChanged, signOut }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-auth.js";
-import { getFirestore, collection, getDocs, doc, getDoc, updateDoc, deleteDoc, orderBy, query }
+import { getFirestore, collection, getDocs, doc, getDoc, setDoc, updateDoc, deleteDoc, orderBy, query }
   from "https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js";
 
 // 1) PASTE YOUR FIREBASE WEB CONFIG HERE (Firebase Console > Project settings > Your apps > Web app)
@@ -151,6 +152,7 @@ async function render() {
     if (tab === "plans") return renderSimple(v, "subscriptions", ["Customer", "Service", "Visits / month", "Worker", "Status"],
       x => [esc(x.customerName), esc(x.service), esc(x.visitsPerMonth), esc(x.workerName || "-"), "<span class=\"tag\">" + esc(x.status) + "</span>"]);
     if (tab === "contracts") return renderContracts(v);
+    if (tab === "donate") return renderDonate(v);
     if (tab === "reqs") return renderSimple(v, "requirements", ["Title", "Customer", "Service", "Budget", "Status"],
       r => [esc(r.title), esc(r.customerName), esc(r.service), "&#8377;" + esc(r.budget), esc(r.status)]);
   } catch (e) { v.innerHTML = `<p class="err">${esc(e.message)}</p>`; }
@@ -288,6 +290,43 @@ async function renderSimple(v, coll, heads, cells) {
     if (!confirm("Delete this item?")) return;
     await deleteDoc(doc(db, coll, b.dataset.id));
     render();
+  };
+}
+
+// Support / donate: set the UPI ID shown in the app, and see the "I have paid" notes.
+async function renderDonate(v) {
+  const cfgSnap = await getDoc(doc(db, "config", "donate"));
+  const c = cfgSnap.exists() ? cfgSnap.data() : {};
+  const rows = await load("donations");
+  rows.sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+  const total = rows.reduce((s, r) => s + (Number(r.amount) || 0), 0);
+  v.innerHTML = `
+    <div class="wrap" style="padding:16px">
+      <h3 style="margin-top:0">Support settings (shown in the app)</h3>
+      <label>Your UPI ID</label>
+      <input id="dUpi" placeholder="name@bank" value="${esc(c.upiId || "")}">
+      <label>Name shown to payer</label>
+      <input id="dName" placeholder="PSYREN" value="${esc(c.payeeName || "")}">
+      <label>Short message (optional)</label>
+      <input id="dMsg" placeholder="Thank you for supporting us" value="${esc(c.message || "")}">
+      <button class="btn b-green" id="dSave" style="padding:10px 16px">Save</button>
+      <span id="dOk" style="margin-left:10px"></span>
+    </div>
+    <h3>"I have paid" notes &mdash; total noted: &#8377;${total}</h3>
+    <p><small>These are notes written by users. Always check your real UPI app for the actual money.</small></p>
+    <div class="wrap"><table><thead><tr>
+      <th>Date</th><th>Name</th><th>Amount</th><th>UTR</th><th>Message</th></tr></thead>
+      <tbody>${rows.map(r => `<tr>
+        <td>${r.createdAt ? new Date(r.createdAt.seconds * 1000).toLocaleDateString("en-IN") : ""}</td>
+        <td>${esc(r.donorName)}</td><td>&#8377;${esc(r.amount)}</td>
+        <td>${esc(r.utr)}</td><td>${esc(r.note)}</td></tr>`).join("")}</tbody></table></div>`;
+  $("dSave").onclick = async () => {
+    await setDoc(doc(db, "config", "donate"), {
+      upiId: $("dUpi").value.trim(),
+      payeeName: $("dName").value.trim(),
+      message: $("dMsg").value.trim()
+    });
+    $("dOk").textContent = "Saved";
   };
 }
 
